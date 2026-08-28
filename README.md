@@ -10,29 +10,33 @@ sign with. That is the gap this fills.
 
 ## Layout
 
-Clone this inside an rclone checkout, so the binary you build is the one tested:
+Clone this inside an rclone checkout, so the code you are working on is what
+gets tested:
 
 ```
 rclone/                     your rclone checkout
-├── rclone                  go build
 └── rclone-webdav-test/     this repo
-    └── smoke.sh            finds ../rclone by itself
+    ├── smoke.sh            rebuilds ../ before each run
+    └── .rclone-built       the binary it builds (gitignored)
 ```
 
 ```console
 git clone <this repo> rclone-webdav-test
 cd rclone-webdav-test
 docker compose up -d --build
-cd .. && go build && cd -
 ./smoke.sh
 ```
 
-If the checkout has no binary built yet, the script builds one itself into
-`.rclone-built` and uses that. It never uses `go run`: that costs about 6s per
-invocation against 0.2s for a binary, and a full run makes a few hundred calls.
+Inside an rclone checkout the script rebuilds rclone from source on every run,
+into `.rclone-built`, so results always describe the working tree and never a
+stale binary. That costs 10-20s, nearly all of it linking, against a run
+measured in minutes. `SKIP_BUILD=1 ./smoke.sh` reuses the last build.
 
-To test some other binary: `./smoke.sh /path/to/rclone`, or
-`RCLONE=/path/to/rclone ./smoke.sh`, or drop an `rclone` in this directory.
+It never uses `go run`, which costs about 6s per invocation against 0.2s for a
+binary - with a few hundred calls per run that would add half an hour.
+
+To test some other binary instead, and skip building entirely:
+`./smoke.sh /path/to/rclone` or `RCLONE=/path/to/rclone ./smoke.sh`.
 
 ## The servers
 

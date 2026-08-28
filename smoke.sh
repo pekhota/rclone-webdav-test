@@ -10,23 +10,29 @@ set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 
 # Which rclone to test. The expected layout is this repo cloned inside an
-# rclone checkout, so ../rclone is the binary just built there.
+# rclone checkout, in which case it is rebuilt from source on every run so the
+# results always describe the working tree rather than a stale binary. An
+# explicit binary is used as given, without building.
+#
+# The build costs 10-20s, nearly all of it linking, against a run measured in
+# minutes. Set SKIP_BUILD=1 to reuse the last one. "go run" is never used: it
+# costs about 6s per invocation against 0.2s for a binary, and this script
+# makes a few hundred calls.
 if [ $# -ge 1 ]; then
   RCLONE=$1
 elif [ -n "${RCLONE:-}" ]; then
   : # taken from the environment
-elif [ -x "$HERE/../rclone" ]; then
-  RCLONE="$HERE/../rclone"
+elif grep -qs '^module github.com/rclone/rclone$' "$HERE/../go.mod"; then
+  RCLONE="$HERE/.rclone-built"
+  if [ -n "${SKIP_BUILD:-}" ] && [ -x "$RCLONE" ]; then
+    echo "SKIP_BUILD set, reusing $RCLONE" >&2
+  else
+    echo "building rclone from $(cd "$HERE/.." && pwd) ..." >&2
+    (cd "$HERE/.." && go build -o "$RCLONE" .) || {
+      echo "error: go build failed" >&2; exit 2; }
+  fi
 elif [ -x "$HERE/rclone" ]; then
   RCLONE="$HERE/rclone"
-elif grep -qs '^module github.com/rclone/rclone$' "$HERE/../go.mod"; then
-  # Inside an rclone checkout with nothing built yet. Build once - "go run" per
-  # call costs about 6s against 0.2s for a binary, and this script makes a few
-  # hundred calls.
-  RCLONE="$HERE/.rclone-built"
-  echo "no rclone binary found, building from $(cd "$HERE/.." && pwd) ..." >&2
-  (cd "$HERE/.." && go build -o "$RCLONE" .) || {
-    echo "error: go build failed" >&2; exit 2; }
 else
   RCLONE=rclone
 fi
