@@ -1,0 +1,4 @@
+# an rclone binary dropped here to test against
+/rclone
+# built automatically when the checkout has none
+/.rclone-built

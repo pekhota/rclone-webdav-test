@@ -1,0 +1,110 @@
+# WebDAV servers for exercising rclone's authentication paths.
+#
+#   docker compose up -d --build          the light ones (Apache + rclone serve)
+#   docker compose --profile heavy up -d  adds Nextcloud and ownCloud
+#   docker compose down -v                tear everything down
+#
+# Credentials are alice/secret everywhere except the Nextcloud and ownCloud
+# services, which use their own. See rclone.conf for ready made remotes.
+#
+# Every Apache service runs the same image and differs only in which config
+# file it starts with, so a new variant is one config file plus five lines.
+
+x-apache: &apache
+  build: .
+  image: rclone-davlab:latest
+  restart: unless-stopped
+
+services:
+  # --- no authentication, the control case -------------------------------
+  open:
+    <<: *apache
+    container_name: davlab-open
+    command: ["httpd", "-f", "/usr/local/apache2/conf/open.conf", "-D", "FOREGROUND"]
+    ports: ["18100:80"]
+
+  # --- basic authentication ----------------------------------------------
+  basic:
+    <<: *apache
+    container_name: davlab-basic
+    command: ["httpd", "-f", "/usr/local/apache2/conf/basic.conf", "-D", "FOREGROUND"]
+    ports: ["18101:80"]
+
+  # rclone's own server, a second basic implementation to test against
+  rclone-serve:
+    image: rclone/rclone:latest
+    container_name: davlab-rclone
+    restart: unless-stopped
+    command: >
+      serve webdav /data --addr :80
+      --user alice --pass secret
+    volumes:
+      - rclone-data:/data
+    ports: ["18102:80"]
+
+  # --- digest authentication ---------------------------------------------
+  digest:
+    <<: *apache
+    container_name: davlab-digest
+    command: ["httpd", "-f", "/usr/local/apache2/conf/digest.conf", "-D", "FOREGROUND"]
+    ports: ["18103:80"]
+
+  # nonce expires after 5s, so challenges come back stale=true and requests
+  # have to be signed again mid-session
+  digest-stale:
+    <<: *apache
+    container_name: davlab-digest-stale
+    command: ["httpd", "-f", "/usr/local/apache2/conf/digest-stale.conf", "-D", "FOREGROUND"]
+    ports: ["18104:80"]
+
+  # AuthDigestNcCheck On - rejects nonce counts that arrive out of order, so
+  # concurrent transfers fail. Use --transfers 1 --checkers 1 against this one.
+  digest-nccheck:
+    <<: *apache
+    container_name: davlab-digest-nccheck
+    command: ["httpd", "-f", "/usr/local/apache2/conf/digest-nccheck.conf", "-D", "FOREGROUND"]
+    ports: ["18105:80"]
+
+  # offers an algorithm rclone can't sign with, so it should refuse and say why
+  digest-md5sess:
+    <<: *apache
+    container_name: davlab-digest-md5sess
+    command: ["httpd", "-f", "/usr/local/apache2/conf/digest-md5sess.conf", "-D", "FOREGROUND"]
+    ports: ["18106:80"]
+
+  # --- the real products, for the vendor specific code paths -------------
+  nextcloud:
+    image: nextcloud:latest
+    container_name: davlab-nextcloud
+    profiles: ["heavy"]
+    restart: unless-stopped
+    environment:
+      SQLITE_DATABASE: nextcloud.db
+      NEXTCLOUD_ADMIN_USER: alice
+      NEXTCLOUD_ADMIN_PASSWORD: secretsecret
+      NEXTCLOUD_TRUSTED_DOMAINS: "*"
+    volumes:
+      - nextcloud-data:/var/www/html
+    ports: ["18110:80"]
+
+  owncloud:
+    image: owncloud/server:latest
+    container_name: davlab-owncloud
+    profiles: ["heavy"]
+    restart: unless-stopped
+    environment:
+      OWNCLOUD_DOMAIN: localhost:18111
+      OWNCLOUD_DB_TYPE: sqlite
+      OWNCLOUD_DB_NAME: owncloud.db
+      OWNCLOUD_ADMIN_USERNAME: alice
+      OWNCLOUD_ADMIN_PASSWORD: secretsecret
+      OWNCLOUD_REDIS_ENABLED: "false"
+      OWNCLOUD_TRUSTED_DOMAINS: "localhost,127.0.0.1"
+    volumes:
+      - owncloud-data:/mnt/data
+    ports: ["18111:8080"]
+
+volumes:
+  rclone-data:
+  nextcloud-data:
+  owncloud-data:
