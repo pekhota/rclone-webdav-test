@@ -35,6 +35,15 @@ measured in minutes. `SKIP_BUILD=1 ./smoke.sh` reuses the last build.
 It never uses `go run`, which costs about 6s per invocation against 0.2s for a
 binary - with a few hundred calls per run that would add half an hour.
 
+A build without digest support is not refused: it prints a warning and runs
+anyway, so the digest remotes fail and everything else passes. That is what
+makes before and after comparisons work:
+
+```console
+git -C .. switch master   && ./smoke.sh   # 73 passed, 5 failed
+git -C .. switch my-branch && ./smoke.sh  # 130 passed, 0 failed
+```
+
 To test some other binary instead, and skip building entirely:
 `./smoke.sh /path/to/rclone` or `RCLONE=/path/to/rclone ./smoke.sh`.
 

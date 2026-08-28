@@ -24,10 +24,11 @@ elif [ -n "${RCLONE:-}" ]; then
   : # taken from the environment
 elif grep -qs '^module github.com/rclone/rclone$' "$HERE/../go.mod"; then
   RCLONE="$HERE/.rclone-built"
+  BUILT_FROM=$(cd "$HERE/.." && pwd)
   if [ -n "${SKIP_BUILD:-}" ] && [ -x "$RCLONE" ]; then
     echo "SKIP_BUILD set, reusing $RCLONE" >&2
   else
-    echo "building rclone from $(cd "$HERE/.." && pwd) ..." >&2
+    echo "building rclone from $BUILT_FROM ..." >&2
     (cd "$HERE/.." && go build -o "$RCLONE" .) || {
       echo "error: go build failed" >&2; exit 2; }
   fi
@@ -39,16 +40,22 @@ fi
 
 # A build without digest support fails every digest remote with a bare 401,
 # which reads like a broken server rather than the wrong binary.
-if ! "$RCLONE" help backend webdav 2>/dev/null | grep -q -- "--webdav-digest"; then
-  echo "error: $RCLONE ($("$RCLONE" version 2>/dev/null | head -1)) has no webdav digest support." >&2
-  echo "       Expected layout is this repo inside an rclone checkout:" >&2
-  echo "         (cd $HERE/.. && go build) && $0" >&2
-  echo "       Otherwise point it at a build explicitly:" >&2
-  echo "         $0 /path/to/rclone" >&2
-  echo "         RCLONE=/path/to/rclone $0" >&2
-  exit 2
-fi
 echo "using $RCLONE ($("$RCLONE" version 2>/dev/null | head -1))"
+
+# Say up front when the binary has no digest support, so the digest remotes
+# failing reads as "this build can't do it" rather than "the servers are
+# broken". The run continues: a build without the feature is supposed to fail
+# these, and that is what makes before/after comparisons possible.
+if ! "$RCLONE" help backend webdav 2>/dev/null | grep -q -- "--webdav-digest"; then
+  echo >&2
+  echo "warning: this build has no webdav digest support - every dav-digest*" >&2
+  echo "         remote below is expected to fail." >&2
+  if [ -n "${BUILT_FROM:-}" ]; then
+    echo "         Built from $BUILT_FROM, on branch" >&2
+    echo "         '$(git -C "$BUILT_FROM" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)'." >&2
+  fi
+  echo >&2
+fi
 
 CONF="$HERE/rclone.conf"
 WORK=$(mktemp -d)
